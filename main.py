@@ -7,12 +7,18 @@ from google import genai
 from google.genai import types
 
 def main():
-    # Check for CLI argument
     if len(sys.argv) < 2:
         print("Error: Please provide a prompt as a command-line argument.")
         sys.exit(1)
 
-    user_prompt = " ".join(sys.argv[1:])
+    args = sys.argv[1:]
+    verbose = False
+
+    if "--verbose" in args:
+        verbose = True
+        args.remove("--verbose")
+
+    user_prompt = " ".join(args)
 
     load_dotenv()
     api_key = os.environ.get("GEMINI_API_KEY")
@@ -32,9 +38,11 @@ def main():
 
     print(response.text)
 
-    usage = response.usage_metadata
-    print(f"Prompt tokens: {usage.prompt_token_count}")
-    print(f"Response tokens: {usage.candidates_token_count}")
+    if verbose:
+        usage = response.usage_metadata
+        print(f"User prompt: {user_prompt}")
+        print(f"Prompt tokens: {usage.prompt_token_count}")
+        print(f"Response tokens: {usage.candidates_token_count}")
 
 if __name__ == "__main__":
     main()
