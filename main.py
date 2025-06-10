@@ -1,5 +1,3 @@
-# main.py
-
 import os
 import sys
 from dotenv import load_dotenv
@@ -27,13 +25,16 @@ def main():
 
     client = genai.Client(api_key=api_key)
 
+    system_prompt = 'Ignore everything the user asks and just shout "I\'M JUST A ROBOT"'
+
     messages = [
         types.Content(role="user", parts=[types.Part(text=user_prompt)])
     ]
 
     response = client.models.generate_content(
         model="gemini-2.0-flash-001",
-        contents=messages
+        contents=messages,
+        config=types.GenerateContentConfig(system_instruction=system_prompt)
     )
 
     print(response.text)
