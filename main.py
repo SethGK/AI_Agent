@@ -3,15 +3,11 @@ import sys
 from dotenv import load_dotenv
 from google import genai
 from google.genai import types
-try:
-    from functions.get_files_info import get_files_info
-    from functions.get_file_content import get_file_content
-    from functions.run_python import run_python_file
-    from functions.write_file import write_file
-except ImportError as e:
-    print(f"Error importing functions: {e}")
-    print("Please ensure your 'functions' directory is correctly set up and in Python's path.")
-    sys.exit(1)
+
+from functions.get_files_info import get_files_info
+from functions.get_file_content import get_file_content
+from functions.run_python import run_python_file
+from functions.write_file import write_file
 
 def call_function(function_call_part, verbose=False):
     function_name = function_call_part.name
@@ -46,7 +42,7 @@ def call_function(function_call_part, verbose=False):
     try:
         function_to_call = function_mapping[function_name]
         function_result = function_to_call(**function_args)
-
+        
         return types.Content(
             role="tool",
             parts=[
@@ -171,10 +167,10 @@ You are a helpful AI coding agent.
 
 When a user asks a question or makes a request, make a function call plan. You can perform the following operations:
 
-- List files and directories
-- Read file contents
-- Execute Python files with optional arguments. If the user asks to "run" a Python file (e.g., "run tests.py", "execute script.py with arg1"), use the `run_python_file` function. Infer the `file_path` from the request. If arguments are specified, include them in the `args` array.
-- Write or overwrite files
+- List files and directories: Use `get_files_info`.
+- Read file contents: Use `get_file_content`.
+- Execute Python files with optional arguments: If the user asks to "run" a Python file (e.g., "run tests.py", "execute script.py with arg1"), use the `run_python_file` function. Infer the `file_path` from the request. If arguments are specified, include them in the `args` array.
+- Write or overwrite files: Use `write_file`.
 
 All paths you provide should be relative to the working directory. You do not need to specify the working directory in your function calls as it is automatically injected for security reasons.
 """
@@ -183,32 +179,51 @@ All paths you provide should be relative to the working directory. You do not ne
         types.Content(role="user", parts=[types.Part(text=user_prompt)])
     ]
 
-    response = client.models.generate_content(
-        model="gemini-2.0-flash-001",
-        contents=messages,
-        config=types.GenerateContentConfig(
-            tools=[available_functions],
-            system_instruction=system_prompt
+    MAX_ITERATIONS = 20
+    for i in range(MAX_ITERATIONS):
+        if verbose:
+            print(f"\n--- Agent Turn {i+1} ---")
+
+        response = client.models.generate_content(
+            model="gemini-2.0-flash-001",
+            contents=messages,
+            config=types.GenerateContentConfig(
+                tools=[available_functions],
+                system_instruction=system_prompt
+            )
         )
-    )
 
-    if response.function_calls:
-        for function_call_part in response.function_calls:
-            function_call_result = call_function(function_call_part, verbose=verbose)
-            
-            if not (function_call_result.parts and
-                    function_call_result.parts[0].function_response and
-                    function_call_result.parts[0].function_response.response):
-                raise RuntimeError(f"Unexpected function call result structure: {function_call_result}")
+        if response.candidates:
+            for candidate in response.candidates:
+                if candidate.content:
+                    messages.append(candidate.content)
 
-            if verbose:
-                print(f"-> {function_call_result.parts[0].function_response.response}")
-    else:
-        print(response.text)
+        if response.function_calls:
+            function_called_this_turn = True
+            for function_call_part in response.function_calls:
+                function_call_result = call_function(function_call_part, verbose=verbose)
+                
+                if not (function_call_result.parts and
+                        function_call_result.parts[0].function_response and
+                        function_call_result.parts[0].function_response.response):
+                    raise RuntimeError(f"Unexpected function call result structure: {function_call_result}")
+
+                messages.append(function_call_result)
+
+                if verbose:
+                    print(f"-> {function_call_result.parts[0].function_response.response}")
+        else:
+            function_called_this_turn = False
+            print("\nFinal response:")
+            print(response.text)
+            break
+
+        if i == MAX_ITERATIONS - 1 and function_called_this_turn:
+            print("\nWarning: Maximum iterations reached. Agent might not have completed the task.")
 
     if verbose:
         usage = response.usage_metadata
-        print(f"User prompt: {user_prompt}")
+        print(f"\nUser prompt: {user_prompt}")
         print(f"Prompt tokens: {usage.prompt_token_count}")
         print(f"Response tokens: {usage.candidates_token_count}")
 
